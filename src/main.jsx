@@ -8,7 +8,66 @@ import './style.css';
 pdfjsLib.GlobalWorkerOptions.workerSrc=workerUrl;
 const uid=()=>crypto.randomUUID();
 function save(bytes,name){const blob=new Blob([bytes],{type:'application/pdf'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000)}
-function Thumb({bytes,pageNumber,rotation}){const canvas=useRef(null);useEffect(()=>{let cancelled=false,task;async function draw(){try{const pdf=await pdfjsLib.getDocument({data:bytes.slice()}).promise;if(cancelled)return;const page=await pdf.getPage(pageNumber);const view=page.getViewport({scale:0.65,rotation});const c=canvas.current;if(!c)return;const ctx=c.getContext('2d');c.width=view.width;c.height=view.height;task=page.render({canvasContext:ctx,viewport:view});await task.promise;}catch(e){if(e.name!=='RenderingCancelledException')console.warn(e)}}draw();return()=>{cancelled=true;task?.cancel()};},[bytes,pageNumber,rotation]);return <canvas ref={canvas} className="thumb"/>}
+// Share one PDF.js document per uploaded file instead of opening it for every page.
+const documentCache=new WeakMap();
+function getPreviewDocument(bytes){
+  let task=documentCache.get(bytes);
+  if(!task){
+    task=pdfjsLib.getDocument({data:bytes.slice()}).promise;
+    documentCache.set(bytes,task);
+    task.catch(()=>documentCache.delete(bytes));
+  }
+  return task;
+}
+// Limit concurrent canvas renders so large PDFs cannot flood browser memory.
+let activeRenders=0;
+const renderQueue=[];
+function queueRender(job){
+  let cancelled=false;
+  let started=false;
+  const entry=()=>{
+    if(cancelled){activeRenders--;drainRenders();return}
+    started=true;
+    Promise.resolve().then(job).catch(e=>{if(e?.name!=='RenderingCancelledException')console.warn(e)}).finally(()=>{activeRenders--;drainRenders()});
+  };
+  renderQueue.push(entry);
+  drainRenders();
+  return ()=>{cancelled=true;if(!started){const index=renderQueue.indexOf(entry);if(index>=0)renderQueue.splice(index,1)}};
+}
+function drainRenders(){while(activeRenders<2&&renderQueue.length){activeRenders++;renderQueue.shift()()}}
+function Thumb({bytes,pageNumber,rotation}){
+  const canvas=useRef(null);
+  const [visible,setVisible]=useState(false);
+  useEffect(()=>{
+    const element=canvas.current;
+    if(!element)return;
+    if(!('IntersectionObserver' in window)){setVisible(true);return}
+    const observer=new IntersectionObserver(entries=>{if(entries[0]?.isIntersecting){setVisible(true);observer.disconnect()}},{rootMargin:'180px'});
+    observer.observe(element);
+    return ()=>observer.disconnect();
+  },[bytes,pageNumber]);
+  useEffect(()=>{
+    if(!visible)return;
+    let cancelled=false,task;
+    const cancelQueued=queueRender(async()=>{
+      const pdf=await getPreviewDocument(bytes);
+      if(cancelled)return;
+      const page=await pdf.getPage(pageNumber);
+      try{
+        if(cancelled)return;
+        const view=page.getViewport({scale:0.4,rotation});
+        const c=canvas.current;
+        if(!c)return;
+        const ctx=c.getContext('2d');
+        c.width=Math.ceil(view.width);c.height=Math.ceil(view.height);
+        task=page.render({canvasContext:ctx,viewport:view});
+        await task.promise;
+      }finally{page.cleanup()}
+    });
+    return ()=>{cancelled=true;cancelQueued();task?.cancel()};
+  },[bytes,pageNumber,rotation,visible]);
+  return <canvas ref={canvas} className="thumb"/>;
+}
 function App(){const [mode,setMode]=useState('merge');const [files,setFiles]=useState([]);const [pages,setPages]=useState([]);const [selectedPages,setSelectedPages]=useState([]);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [notice,setNotice]=useState('');const input=useRef();const dragged=useRef(null);
 const reset=()=>{setFiles([]);setPages([]);setSelectedPages([]);setError('');setNotice('')};
 function switchMode(next){setMode(next);reset()}
