@@ -17,3 +17,13 @@
 .selectionLabel{padding:11px 12px;font-size:12px;font-weight:700;color:#536176}
 .isSelected .selectionLabel{color:#e94c61}
 @media(max-width:700px){.splitSelector .sectionTitle{align-items:flex-start;gap:12px;flex-wrap:wrap}.selectionActions{width:100%}}
+
+/* Editable download filename */
+.exportDetails{display:flex;flex-direction:column;gap:7px;min-width:0;flex:1}
+.exportDetails>label{font-size:12px;font-weight:700;color:#536176}
+.filenameInput{display:flex;align-items:center;max-width:420px;background:#fff;border:1px solid #d9e0ea;border-radius:9px;overflow:hidden}
+.filenameInput:focus-within{border-color:#e94c61;box-shadow:0 0 0 3px #e94c611c}
+.filenameInput input{min-width:0;width:100%;padding:11px 12px;border:0;outline:0;font:inherit;color:#273449;background:transparent}
+.filenameInput span{margin:0!important;padding:0 12px;font-size:13px!important;color:#6b778b!important;border-left:1px solid #e6eaf0}
+.exportDetails>div:last-child{display:flex;flex-direction:column}
+@media(max-width:700px){.exportDetails,.filenameInput{width:100%;max-width:none}}
